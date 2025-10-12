@@ -77,7 +77,6 @@ class Robot {
     }
     public doGoHome() {
         logger.log("Going home. If location unknown, look for it.")
-        // no more balls, or time is over, or acknolewdging danger mode
         this.setState(RobotState.searchingHome)
         
     }
@@ -129,6 +128,29 @@ class Robot {
             }
         }
 
+        // Gestion du retour à la base en cas de danger ou fin de jeu
+        if (this.state == RobotState.searchingHome) {
+            const qr = vision.getQRCode(vision_ns.QRcodeId.Home); // Chercher le QR code de la base
+            if (qr != null) {
+                logger.log("QRCode for Home found! Navigating to base...");
+                this.setState(RobotState.goingHome);
+            } else {
+                logger.log("Searching for QR code of Home...");
+                // TO DO: Ajouter une logique pour tourner ou explorer si le QR code n'est pas visible
+            }
+        }
+
+        if (this.state == RobotState.goingHome) {
+            const qr = vision.getQRCode(vision_ns.QRcodeId.Home); // Suivre le QR code de la base
+            if (qr != null) {
+                motion.setWaypoint(qr.getDistanceInCm(), qr.getAngle());
+                logger.log(`Navigating to base: Distance=${qr.getDistanceInCm()}cm, Angle=${qr.getAngle()}°`);
+            } else {
+                logger.log("Lost QR code of Home. Returning to searching...");
+                this.setState(RobotState.searchingHome);
+            }
+        }
+
         //  Condition 2 : ...
 
         //  Condition 3 : ...
@@ -148,39 +170,29 @@ class Robot {
                 motion.setWaypoint(0, 0)
                 break
             case RobotState.searchingBalls:
-                // wait 200ms when losing the ball before spinning around
-                if (this.timeWhenLostBall + WAIT_BEFORE_SPINNING_WHEN_LOST_TRACKING_BALL_MS < control.millis()) {
-                    motion.setWaypoint(50, -60)
+                if (vision.balls.length > 0) {
+                    // Si des balles sont détectées, passer à l'état de suivi
+                    logger.log("Found Balls on screen: " + vision.balls.length);
+                    this.setState(RobotState.trackingBall);
                 } else {
-                    motion.setWaypoint(0, 0)
+                    // Si aucune balle n'est détectée, explorer activement
+                    logger.log("No balls detected. Exploring...");
+                    motion.spinAround(15); // Tourner lentement pour scanner l'environnement
                 }
-                break
+                break;
             case RobotState.searchingHome:
-                /*
-                // waypoint = approximate direction of the base camp
-                if (arena.isPositionReliable()) {
-                    const distanceToBase = arena.getDistanceToBase();
-                    const bearingToBase = arena.getBearingToBase();
-                    const robotPose = arenaMap.getRobotPose();
-                    // Imperative mode
-                    // Calculate turn angle needed
-                    let turnAngle = bearingToBase - robotPose.heading;
-                    if (Math.abs(turnAngle) > 10)
-                        // Normalize angle to -180 to 180
-                        while (turnAngle > 180) turnAngle -= 360;
-                        while (turnAngle < -180) turnAngle += 360;
-                        motion.spinAround(turnAngle);
-                        //motion.setWaypoint(distanceToBase, turnAngle)
-                        logger.log(`Base: ${Math.round(distanceToBase)}cm at ${Math.round(bearingToBase)}°`);
-                        // Auto controlled mode
-                        //motion.setWaypoint(distanceToBase, bearingToBase)
-                    }
+                // Active exploration to find the QR code for the base
+                const qr = vision.getQRCode(vision_ns.QRcodeId.Home);
+                if (qr != null) {
+                    // If the QR code is found, set a waypoint to its position
+                    motion.setWaypoint(qr.getDistanceInCm(), qr.getAngle());
+                    logger.log(`Base QR code found: Distance=${qr.getDistanceInCm()}cm, Angle=${qr.getAngle()}°`);
                 } else {
-                    logger.log("Position uncertain - looking for QR codes...");
-                    //motion.spinAround(10)
+                    // If the QR code is not visible, spin slowly to search
+                    logger.log("Base QR code not found. Spinning to search...");
+                    motion.spinAround(10); // Spin in place to scan the environment
                 }
-                */
-                break
+                break;
             case RobotState.trackingBall:
                 let closestBall = vision.balls[0];
                 for (let i = 1; i < vision.balls.length; i++) {
