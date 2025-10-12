@@ -122,8 +122,10 @@ class Robot {
         }
         // Let's find the base zone
         if (this.state == RobotState.searchingHome) {
-            if (vision.getQRCode(vision_ns.QRcodeId.Home) != null) {
-                logger.log("QRCode for Home found !");
+            const qr = vision.getQRCode(vision_ns.QRcodeId.Home);
+            if (qr != null) {
+                motion.setWaypoint(qr.getDistanceInCm(), qr.getAngle());
+                logger.log(`Base QR code found: Distance=${qr.getDistanceInCm()}cm, Angle=${qr.getAngle()}°`);
                 this.setState(RobotState.goingHome);
             }
         }
@@ -141,10 +143,10 @@ class Robot {
         }
 
         if (this.state == RobotState.goingHome) {
-            const qr = vision.getQRCode(vision_ns.QRcodeId.Home); // Suivre le QR code de la base
-            if (qr != null) {
-                motion.setWaypoint(qr.getDistanceInCm(), qr.getAngle());
-                logger.log(`Navigating to base: Distance=${qr.getDistanceInCm()}cm, Angle=${qr.getAngle()}°`);
+            const qrCode = vision.getQRCode(vision_ns.QRcodeId.Home);
+            if (qrCode != null) {
+                motion.setWaypoint(qrCode.getDistanceInCm(), qrCode.getAngle());
+                logger.log(`Navigating to base: Distance=${qrCode.getDistanceInCm()}cm, Angle=${qrCode.getAngle()}°`);
             } else {
                 logger.log("Lost QR code of Home. Returning to searching...");
                 this.setState(RobotState.searchingHome);
@@ -181,16 +183,11 @@ class Robot {
                 }
                 break;
             case RobotState.searchingHome:
-                // Active exploration to find the QR code for the base
                 const qr = vision.getQRCode(vision_ns.QRcodeId.Home);
                 if (qr != null) {
-                    // If the QR code is found, set a waypoint to its position
                     motion.setWaypoint(qr.getDistanceInCm(), qr.getAngle());
                     logger.log(`Base QR code found: Distance=${qr.getDistanceInCm()}cm, Angle=${qr.getAngle()}°`);
-                } else {
-                    // If the QR code is not visible, spin slowly to search
-                    logger.log("Base QR code not found. Spinning to search...");
-                    motion.spinAround(10); // Spin in place to scan the environment
+                    this.setState(RobotState.goingHome);
                 }
                 break;
             case RobotState.trackingBall:
@@ -211,12 +208,23 @@ class Robot {
                 logger.log("Closest ball at distance ~" + closestBall.getDistanceInCm() + "cm, angle=" + closestBall.getAngleFromX() + " steering angle " + steeringAngle)
                 break
             case RobotState.goingHome:
-                // waypoint = QR code on Camera
-                let qr = vision.getQRCode(vision_ns.QRcodeId.Home)
-                if (qr != null) {
-                    motion.setWaypoint(qr.getDistanceInCm(), qr.getAngle())
+                const qrCode = vision.getQRCode(vision_ns.QRcodeId.Home);
+                if (qrCode != null) {
+                    const screenSide = qrCode.getScreenSide();
+                    if (screenSide === vision_ns.ScreenSide.Middle) {
+                        // Si le QR code est centré, considérer que le robot est dans la base
+                        logger.log("QR code is centered. Robot is in the base!");
+                        this.setState(RobotState.atHome);
+                    } else {
+                        // Ajuster le waypoint pour centrer le QR code
+                        motion.setWaypoint(0, qrCode.getAngle());
+                        logger.log(`Adjusting to center QR code: Angle=${qrCode.getAngle()}°`);
+                    }
+                } else {
+                    logger.log("Lost QR code of Home. Returning to searching...");
+                    this.setState(RobotState.searchingHome);
                 }
-                break
+                break;
             default:
                 break
         }

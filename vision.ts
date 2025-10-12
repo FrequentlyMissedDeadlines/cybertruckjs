@@ -13,8 +13,9 @@ namespace vision_ns {
     export const BALL_REFERENCE_DISTANCE = 50; // (cm)
     export const BALL_REFERENCE_FRAMESIZE = 30; // (pixels) width and height of a ball frame at 50 cm distance
     export const BALL_DISTANCE_RATIO = BALL_REFERENCE_DISTANCE / BALL_REFERENCE_FRAMESIZE;
-    export const TAG_REFERENCE_DISTANCE = 50; // (cm)
-    export const TAG_REFERENCE_FRAMESIZE = 30; // (pixels) width and height of a ball frame at 50 cm distance
+    export const TAG_REFERENCE_DISTANCE = 50; // Distance de référence pour les tags (en cm)
+    export const TAG_REFERENCE_FRAMESIZE = 40; // Taille apparente des tags à 50 cm (en pixels)
+    export const TAG_REAL_SIZE_CM = 10; // Taille réelle des tags (en cm)
     export const TAG_DISTANCE_RATIO = TAG_REFERENCE_DISTANCE / TAG_REFERENCE_FRAMESIZE;
     // Screen Side Class
     export enum ScreenSide {
@@ -108,13 +109,16 @@ namespace vision_ns {
         }
 
         // Compute distance of an object based on visual size ratio
-        // good for large objects like QR Codes ?
+        // Adjusted for tags of 10 cm
         getDistanceBySize() {
-            const size = Math.sqrt(this.w ** 2 + this.h ** 2); // frame diagonal
+            const size = Math.sqrt(this.w ** 2 + this.h ** 2); // Diagonale du cadre
             switch (this.kind) {
-                case ObjectKind.Ball: return (BALL_REFERENCE_FRAMESIZE * BALL_REFERENCE_DISTANCE) / size;
-                case ObjectKind.QRcode: return (TAG_REFERENCE_FRAMESIZE * TAG_REFERENCE_DISTANCE) / size;
-                default: return Infinity;
+                case ObjectKind.Ball:
+                    return (BALL_REFERENCE_FRAMESIZE * BALL_REFERENCE_DISTANCE) / size;
+                case ObjectKind.QRcode:
+                    return (TAG_REAL_SIZE_CM * TAG_REFERENCE_DISTANCE) / size;
+                default:
+                    return Infinity;
             }
         }
 
@@ -139,9 +143,11 @@ namespace vision_ns {
 
         // Convert visual distance to real distance
         getDistanceInCm() {
-            const deltaX = this.x - HUSKY_SCREEN_ORIGIN_X;
-            const deltaY = this.y - HUSKY_SCREEN_ORIGIN_Y;
-            return Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+            const size = Math.sqrt(this.w ** 2 + this.h ** 2); // Diagonale du cadre
+            if (this.kind === ObjectKind.QRcode) {
+                return (TAG_REAL_SIZE_CM * TAG_REFERENCE_DISTANCE) / size;
+            }
+            return Infinity; // Par défaut, retourne une distance infinie si le type est inconnu
         }
 
         // Compute distance of a Ball based on Y position on screen
@@ -189,6 +195,22 @@ namespace vision_ns {
         }
     }
 
+    // Detected Object Class
+    export class DetectedObject {
+        sizeInPixels: number; // Taille apparente du QR code dans l'image
+        realSizeInCm: number; // Taille réelle du QR code (par exemple, 5 cm)
+        
+        constructor(sizeInPixels: number, realSizeInCm: number) {
+            this.sizeInPixels = sizeInPixels;
+            this.realSizeInCm = realSizeInCm;
+        }
+    
+        getDistanceInCm(): number {
+            // Constante de calibration (à ajuster en fonction de la caméra)
+            const calibrationFactor = 500; // Exemple : dépend de la caméra et de la configuration
+            return (this.realSizeInCm * calibrationFactor) / this.sizeInPixels;
+        }
+    }
 
     // Vision Processor Class
     export class VisionProcessor {
